@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -eo pipefail
+
+BUILD_DIR=${1}
+CACHE_DIR=${2}
+DEPS_DIR=${3}
+INDEX=${4}
+
+BUILDPACK_DIR=$DIR=$(dirname $(readlink -f ${BASH_SOURCE%/*}))
+
+echo "BUILDPACK_DIR = ${BUILDPACK_DIR}"
+echo "BUILD_DIR = ${BUILD_DIR}"
+echo "CACHE_DIR = ${CACHE_DIR}"
+echo "DEPS_DIR = ${DEPS_DIR}"
+echo "INDEX = ${INDEX}"
+
+pushed "${DEPS_DIR}/${INDEX}"
+
+SERVICE_INSTANCE_NAME=my-creds-bucket
+KEY_NAME=karinz
+cf create-service-key "${SERVICE_INSTANCE_NAME}" "${KEY_NAME}"
+S3_CREDENTIALS=`cf service-key "${SERVICE_INSTANCE_NAME}" "${KEY_NAME}" | tail -n +2`
+export AWS_ACCESS_KEY_ID=`echo "${S3_CREDENTIALS}" | jq -r .access_key_id`
+export AWS_SECRET_ACCESS_KEY=`echo "${S3_CREDENTIALS}" | jq -r .secret_key_id`
+export BUCKET_NAME=`echo "${S3_CREDENTIALS}" | jq -r .bucket`
+export AWS_DEFAULT_REGIONS=`echo "${S3_CREDENTIALS}" | jq -r '.region'`
+
+KEYSTORE=`aws s3 cp s3://${BUCKET_NAME}/keystore.pfx`
+
+popd
+
+# Create a .profile folder within the build directory
+mkdir -p "${BUILD_DIR}/.profile.d"
+# Create a param to reference build .profile + script
+# custom_credentials.sh will be run when the app starts. Can be named whatever you want.
+CUSTOM_KEYSTORE_PATH="${BUILD_DIR}/.profile.d/custom_credentials.sh"
+# Make CUSTOM_KEYSTORE available as env variable when the script is run.
+echo "export CUSTOM_KEYSTORE=/deps/${INDEX}/${KEYSTORE}" > "${CUSTOM_KEYSTORE_PATH}"
+ 
